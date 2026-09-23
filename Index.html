@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. // ADVANCED HUD</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Orbitron', monospace; }
+        
+        body {
+            background-color: #010408; color: #00f0ff; height: 100vh; width: 100vw;
+            overflow: hidden; display: flex; flex-direction: column; justify-content: space-between;
+            padding: 12px; position: relative;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.15) 0%, rgba(1, 4, 8, 0.98) 80%),
+                linear-gradient(rgba(0, 240, 255, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.04) 1px, transparent 1px);
+            background-size: 100% 100%, 25px 25px, 25px 25px;
+        }
+
+        #unlock-screen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(1, 4, 8, 0.95); z-index: 100000; display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            cursor: pointer; text-align: center; border: 2px solid #00f0ff; padding: 20px;
+        }
+
+        .top-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 2px solid rgba(0, 240, 255, 0.4); padding-bottom: 6px; font-weight: 700; font-size: 0.75rem;
+        }
+
+        .main-grid { display: grid; grid-template-columns: 1fr 2.2fr 1fr; gap: 10px; height: 58vh; align-items: center; }
+        .widget-box {
+            border: 1px solid rgba(0, 240, 255, 0.3); background: rgba(1, 10, 22, 0.85);
+            padding: 10px; border-radius: 6px; height: 100%; display: flex; flex-direction: column; justify-content: space-between;
+            box-shadow: inset 0 0 15px rgba(0, 240, 255, 0.15); z-index: 2;
+        }
+
+        .hud-center { display: flex; justify-content: center; align-items: center; position: relative; height: 100%; }
+        
+        .arc-svg {
+            width: 260px; height: 260px; filter: drop-shadow(0 0 12px #00f0ff);
+        }
+
+        .ring-cw { transform-origin: center; animation: rotateCW 8s linear infinite; }
+        .ring-ccw { transform-origin: center; animation: rotateCCW 6s linear infinite; }
+        .ring-fast { transform-origin: center; animation: rotateCW 2.5s linear infinite; }
+        .core-pulse { transform-origin: center; animation: corePulse 1.5s ease-in-out infinite alternate; }
+
+        @keyframes rotateCW { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes rotateCCW { 0% { transform: rotate(360deg); } 100% { transform: rotate(0deg); } }
+        @keyframes corePulse {
+            0% { transform: scale(0.85); opacity: 0.7; }
+            100% { transform: scale(1.1); opacity: 1; filter: drop-shadow(0 0 20px #00f0ff); }
+        }
+
+        .terminal {
+            background: rgba(1, 10, 22, 0.95); border: 1px solid #00f0ff;
+            padding: 12px; border-radius: 8px; box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
+            display: flex; flex-direction: column; gap: 8px; z-index: 5;
+        }
+        .output-box {
+            font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; color: #e0f8ff; min-height: 60px; max-height: 95px;
+            overflow-y: auto; text-shadow: 0 0 5px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 10px;
+        }
+        .controls { display: flex; gap: 8px; }
+        input {
+            flex: 1; background: rgba(0, 240, 255, 0.08); border: 1px solid rgba(0, 240, 255, 0.5);
+            padding: 10px; color: #fff; border-radius: 4px; outline: none; font-size: 0.8rem;
+        }
+        button {
+            background: #00f0ff; color: #010408; border: none; padding: 10px 14px;
+            font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 0.75rem;
+        }
+        .mic-btn { background: #ff0055; color: #fff; }
+
+        #cam-container {
+            display: none; position: relative; width: 100%; height: 110px; border: 1px solid #00f0ff; border-radius: 4px; overflow: hidden;
+        }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+</head>
+<body>
+
+    <div id="unlock-screen" onclick="unlockAudio()">
+        <h2 style="color: #00f0ff; letter-spacing: 3px;">[ INICIAR JARVIS ]</h2>
+        <p style="color: #fff; font-size: 0.8rem; margin-top: 10px;">TOQUE AQUI PARA LIBERAR O ÁUDIO E PERMISSÕES DO NAVEGADOR</p>
+    </div>
+
+    <div class="top-bar">
+        <div>SERVERLESS // MARK VII</div>
+        <div>HORA: <span id="clock" style="color:#00f0ff;">--:--:--</span></div>
+        <div id="status-tag" style="color:#00ff66;">ONLINE</div>
+    </div>
+
+    <div class="main-grid">
+        <div class="widget-box">
+            <div style="font-weight: bold; font-size: 0.7rem;">[VISÃO ÓPTICA]</div>
+            <div id="cam-container">
+                <video id="webcam" autoplay playsinline muted></video>
+            </div>
+            <div id="cam-status" style="font-family: 'Share Tech Mono'; font-size: 0.65rem; color: #8ab4f8;">
+                > CÂMERA: DESATIVADA<br>
+                > COMANDO: "VISUALIZAR"
+            </div>
+        </div>
+
+        <div class="hud-center">
+            <svg class="arc-svg" viewBox="0 0 200 200">
+                <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(0,240,255,0.15)" stroke-width="2"/>
+                <g class="ring-cw">
+                    <circle cx="100" cy="100" r="82" fill="none" stroke="#00f0ff" stroke-width="3" stroke-dasharray="40 15 10 15"/>
+                    <circle cx="100" cy="100" r="74" fill="none" stroke="rgba(0,240,255,0.4)" stroke-width="1.5"/>
+                </g>
+                <g class="ring-ccw">
+                    <circle cx="100" cy="100" r="62" fill="none" stroke="#ff0055" stroke-width="2" stroke-dasharray="15 30 5 30"/>
+                    <circle cx="100" cy="100" r="52" fill="none" stroke="#00f0ff" stroke-width="2.5" stroke-dasharray="60 20"/>
+                </g>
+                <g class="ring-fast">
+                    <circle cx="100" cy="100" r="38" fill="none" stroke="#00f0ff" stroke-width="3" stroke-dasharray="12 12"/>
+                </g>
+                <circle class="core-pulse" cx="100" cy="100" r="22" fill="#00f0ff"/>
+                <circle cx="100" cy="100" r="10" fill="#ffffff"/>
+                <text x="100" y="103" font-size="6.5" font-weight="900" fill="#010408" text-anchor="middle">JARVIS</text>
+            </svg>
+        </div>
+
+        <div class="widget-box">
+            <div style="font-weight: bold; font-size: 0.7rem;">[TELEMETRIA]</div>
+            <div style="font-family: 'Share Tech Mono'; font-size: 0.65rem; color: #8ab4f8; line-height: 1.5;">
+                > USUÁRIO: SR. NICOLAS<br>
+                > MICROFONE: AGUARDANDO<br>
+                > CONEXÃO: HTTP/LOCAL
+            </div>
+        </div>
+    </div>
+
+    <div class="terminal">
+        <div class="output-box" id="output">Toque na tela para iniciar o sistema...</div>
+        <div class="controls">
+            <input type="text" id="user-input" placeholder="Digite ou diga 'visualizar'..." onkeypress="handleKey(event)">
+            <button onclick="sendMsg()">ENVIAR</button>
+            <button class="mic-btn" onclick="startContinuousListening()">🎙️ OUVIR</button>
+        </div>
+    </div>
+
+    <script>
+        // COLOQUE SUA CHAVE VÁLIDA DA GROQ AQUI
+        const GROQ_API_KEY = "SUA_CHAVE_AQUI"; 
+        const MODEL_NAME = "llama-3.3-70b-versatile";
+
+        let conversationHistory = [];
+        let objectModel;
+        let cameraStream = null;
+        let audioUnlocked = false;
+
+        function updateClock() {
+            document.getElementById('clock').innerText = new Date().toLocaleTimeString('pt-BR');
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function unlockAudio() {
+            audioCtx.resume().then(() => {
+                audioUnlocked = true;
+                document.getElementById('unlock-screen').style.display = 'none';
+                playBeep(900, 'sine', 0.2);
+                speak("Sistemas prontos, Sr. Nicolas.");
+                document.getElementById('output').innerText = "À sua disposição, Sr. Nicolas.";
+                startContinuousListening();
+            });
+        }
+
+        function playBeep(freq = 800, type = 'sine', duration = 0.12) {
+            if (!audioUnlocked) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
+        }
+
+        function speak(text) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'pt-BR';
+            utter.rate = 1.0;
+            window.speechSynthesis.speak(utter);
+        }
+
+        async function openCamera() {
+            const camContainer = document.getElementById('cam-container');
+            const video = document.getElementById('webcam');
+            const camStatus = document.getElementById('cam-status');
+
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = cameraStream;
+                camContainer.style.display = 'block';
+                camStatus.innerHTML = "> CÂMERA: ONLINE<br>> ANALISANDO...";
+                speak("Câmera ativada.");
+            } catch(err) {
+                document.getElementById('output').innerText = "Aviso: Câmera bloqueada pelo navegador. Acesse via servidor local (http://).";
+            }
+        }
+
+        function closeCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            document.getElementById('cam-container').style.display = 'none';
+            document.getElementById('cam-status').innerHTML = "> CÂMERA: DESATIVADA<br>> COMANDO: 'VISUALIZAR'";
+            speak("Câmera desligada.");
+        }
+
+        let recognition;
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'pt-BR';
+            recognition.continuous = true;
+
+            recognition.onresult = (event) => {
+                const last = event.results.length - 1;
+                const transcript = event.results[last][0].transcript.trim().toLowerCase();
+
+                if (transcript.includes("visualizar")) {
+                    openCamera();
+                } else if (transcript.includes("fechar")) {
+                    closeCamera();
+                } else if (transcript.includes("jarvis")) {
+                    let cleaned = transcript.replace(/jarvis/g, "").trim();
+                    if (cleaned.length > 0) {
+                        document.getElementById('user-input').value = cleaned;
+                        sendMsg();
+                    }
+                }
+            };
+        }
+
+        function startContinuousListening() {
+            if (recognition) { try { recognition.start(); } catch(e) {} }
+        }
+
+        function handleKey(e) {
+            playBeep(600, 'sine', 0.03);
+            if (e.key === 'Enter') sendMsg();
+        }
+
+        async function sendMsg() {
+            const input = document.getElementById('user-input');
+            const output = document.getElementById('output');
+            const text = input.value.trim();
+
+            if (!text) return;
+            const lower = text.toLowerCase();
+
+            if (lower === "visualizar") { openCamera(); input.value = ''; return; }
+            if (lower === "fechar") { closeCamera(); input.value = ''; return; }
+
+            playBeep(1000, 'square', 0.05);
+            output.innerText = "> Processando...";
+            input.value = '';
+
+            try {
+                conversationHistory.push({ role: "user", content: text });
+
+                const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${GROQ_API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: MODEL_NAME,
+                        messages: [
+                            { role: "system", content: "Você é o J.A.R.V.I.S. Responda em português de forma direta em no máximo 2 frases, tratando o usuário como Sr. Nicolas." },
+                            ...conversationHistory.slice(-6)
+                        ],
+                        temperature: 0.5,
+                        max_tokens: 100
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    output.innerText = "Erro API: " + (errData.error ? errData.error.message : "Chave inválida ou erro de conexão.");
+                    speak("Aviso: Falha na conexão com a chave API.");
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    const reply = data.choices[0].message.content;
+                    conversationHistory.push({ role: "assistant", content: reply });
+                    output.innerText = "JARVIS: " + reply;
+                    speak(reply);
+                } else {
+                    output.innerText = "Erro: Resposta vazia da API.";
+                }
+
+            } catch (err) {
+                output.innerText = "Erro de rede: Certifique-se de estar conectado e usando um servidor local.";
+            }
+        }
+    </script>
+</body>
+</html>
